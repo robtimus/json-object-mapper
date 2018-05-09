@@ -434,37 +434,43 @@ class ObjectMapper {
         }
         $this->classes[$className] = $classDescriptor;
 
-        $classAnnotations = $this->parseAnnotations($class->getDocComment());
-        $accessorType = $this->getAccessorType($classAnnotations);
+        $classDocComment = $class->getDocComment();
+        $accessorType = $this->getAccessorType($classDocComment);
 
         $this->inspectProperties($class, $classDescriptor, $accessorType);
         $this->inspectMethods($class, $classDescriptor, $accessorType);
-        $this->orderProperties($classDescriptor, $classAnnotations);
+        $this->orderProperties($classDescriptor, $classDocComment);
     }
 
     private function inspectProperties(ReflectionClass $class, ClassDescriptor $classDescriptor, $accessorType) {
         foreach ($class->getProperties() as $property) {
             if ($property->getDeclaringClass()->getName() === $classDescriptor->className()) {
-                $propertyAnnotations = $this->parseAnnotations($property->getDocComment());
-                if ($this->includeProperty($property, $accessorType, $propertyAnnotations)) {
-                    $name = $this->getJSONPropertyName($property->getName(), $propertyAnnotations);
+                $propertyDocComment = $property->getDocComment();
+                if ($this->includeProperty($property, $accessorType, $propertyDocComment)) {
+                    $name = $this->getJSONPropertyName($property->getName(), $propertyDocComment);
                     // overwrite what was already specified
-                    $classDescriptor->addProperty($name, $this->getPropertyType($property, $propertyAnnotations))
-                        ->withGetter(array_key_exists('JSONWriteOnly', $propertyAnnotations) ? null : $this->getPropertyGetter($property))
-                        ->withSetter(array_key_exists('JSONReadOnly', $propertyAnnotations) ? null : $this->getPropertySetter($property))
-                        ->withSerializer($this->getSerializer($property, $propertyAnnotations))
-                        ->withDeserializer($this->getDeserializer($property, $propertyAnnotations));
+                    $classDescriptor->addProperty($name, $this->getPropertyType($property, $propertyDocComment))
+                        ->withGetter($this->getPropertyGetter($property, $propertyDocComment))
+                        ->withSetter($this->getPropertySetter($property, $propertyDocComment))
+                        ->withSerializer($this->getSerializer($property, $propertyDocComment))
+                        ->withDeserializer($this->getDeserializer($property, $propertyDocComment));
                 }
             }
         }
     }
 
-    private function getPropertyGetter(ReflectionProperty $property) {
+    private function getPropertyGetter(ReflectionProperty $property, $propertyDocComment) {
+        if ($this->hasMarkerAnnotation($propertyDocComment, 'JSONWriteOnly')) {
+            return null;
+        }
         $property->setAccessible(true);
         return array($property, 'getValue');
     }
 
-    private function getPropertySetter(ReflectionProperty $property) {
+    private function getPropertySetter(ReflectionProperty $property, $propertyDocComment) {
+        if ($this->hasMarkerAnnotation($propertyDocComment, 'JSONReadOnly')) {
+            return null;
+        }
         $property->setAccessible(true);
         return array($property, 'setValue');
     }
@@ -475,16 +481,16 @@ class ObjectMapper {
 
         foreach ($class->getMethods() as $method) {
             if ($method->getDeclaringClass()->getName() === $classDescriptor->className()) {
-                $methodAnnotations = $this->parseAnnotations($method->getDocComment());
+                $methodDocComment = $method->getDocComment();
                 if (!$method->isStatic()) {
-                    if ($this->includeMethod($method, $accessorType, $methodAnnotations)) {
-                        $this->updatePropertyIfNeeded($classDescriptor, $method, $methodAnnotations);
+                    if ($this->includeMethod($method, $accessorType, $methodDocComment)) {
+                        $this->updatePropertyIfNeeded($classDescriptor, $method, $methodDocComment);
                     }
-                    if (array_key_exists('JSONAnyGetter', $methodAnnotations)) {
+                    if ($this->hasMarkerAnnotation($methodDocComment, 'JSONAnyGetter')) {
                         $this->validateAnyGetterMethod($method, $anyGetter);
                         $anyGetter = $method;
                     }
-                    if (array_key_exists('JSONAnySetter', $methodAnnotations)) {
+                    if ($this->hasMarkerAnnotation($methodDocComment, 'JSONAnySetter')) {
                         $this->validateAnySetterMethod($method, $anySetter);
                         $anySetter = $method;
                     }
@@ -499,37 +505,37 @@ class ObjectMapper {
         }
     }
 
-    private function updatePropertyIfNeeded(ClassDescriptor $classDescriptor, ReflectionMethod $method, $methodAnnotations) {
+    private function updatePropertyIfNeeded(ClassDescriptor $classDescriptor, ReflectionMethod $method, $methodDocComment) {
         $methodName = $method->getName();
         if (preg_match('/^(is|get|set)[_A-Z].*/', $methodName, $matches)) {
             if ($matches[1] === 'is' && $method->getNumberOfParameters() === 0) {
                 $name = $this->extractPropertyNameFromMethod($methodName, 2);
-                $name = $this->getJSONPropertyName($name, $methodAnnotations);
-                $type = $this->getReturnType($method, $methodAnnotations);
-                $this->updateProperty($classDescriptor, $method, $name, $type, $methodAnnotations, $method, null);
+                $name = $this->getJSONPropertyName($name, $methodDocComment);
+                $type = $this->getReturnType($method, $methodDocComment);
+                $this->updateProperty($classDescriptor, $method, $name, $type, $methodDocComment, $method, null);
             } else if ($matches[1] === 'get' && $method->getNumberOfParameters() === 0) {
                 $name = $this->extractPropertyNameFromMethod($methodName, 3);
-                $name = $this->getJSONPropertyName($name, $methodAnnotations);
-                $type = $this->getReturnType($method, $methodAnnotations);
-                $this->updateProperty($classDescriptor, $method, $name, $type, $methodAnnotations, $method, null);
+                $name = $this->getJSONPropertyName($name, $methodDocComment);
+                $type = $this->getReturnType($method, $methodDocComment);
+                $this->updateProperty($classDescriptor, $method, $name, $type, $methodDocComment, $method, null);
             } else if ($matches[1] === 'set' && $method->getNumberOfParameters() === 1) {
                 $name = $this->extractPropertyNameFromMethod($methodName, 3);
-                $name = $this->getJSONPropertyName($name, $methodAnnotations);
-                $type = $this->getParameterType($method, $methodAnnotations);
-                $this->updateProperty($classDescriptor, $method, $name, $type, $methodAnnotations, null, $setter);
+                $name = $this->getJSONPropertyName($name, $methodDocComment);
+                $type = $this->getParameterType($method, $methodDocComment);
+                $this->updateProperty($classDescriptor, $method, $name, $type, $methodDocComment, null, $setter);
             }
         }
     }
 
-    private function updateProperty(ClassDescriptor $classDescriptor, ReflectionMethod $method, $name, $type, $methodAnnotations, ReflectionMethod $getter = null, ReflectionMethod $setter = null) {
+    private function updateProperty(ClassDescriptor $classDescriptor, ReflectionMethod $method, $name, $type, $methodDocComment, ReflectionMethod $getter = null, ReflectionMethod $setter = null) {
         $propertyDescriptor = $classDescriptor->ensureProperty($name, $type);
         if (!is_null($getter)) {
             $propertyDescriptor->withGetter($this->getMethodCallable($getter));
-            $propertyDescriptor->withSerializer($this->getSerializer($method, $methodAnnotations));
+            $propertyDescriptor->withSerializer($this->getSerializer($method, $methodDocComment));
         }
         if (!is_null($setter)) {
             $propertyDescriptor->withSetter($this->getMethodCallable($setter));
-            $propertyDescriptor->withDeserializer($this->getDeserializer($method, $methodAnnotations));
+            $propertyDescriptor->withDeserializer($this->getDeserializer($method, $methodDocComment));
         }
     }
 
@@ -560,14 +566,32 @@ class ObjectMapper {
         return array($method, 'invoke');
     }
 
-    private function orderProperties(ClassDescriptor $classDescriptor, $classAnnotations) {
-        if (array_key_exists('JSONPropertyOrder', $classAnnotations)) {
-            if ($classAnnotations['JSONPropertyOrder'][0] === 'ALPHABETICAL') {
-                $classDescriptor->orderProperties();
-            } else {
-                $propertyNames = preg_split('/\s*,\s/', $classAnnotations['JSONPropertyOrder'][0]);
-                $classDescriptor->orderProperties($propertyNames);
+    private function orderProperties(ClassDescriptor $classDescriptor, $classDocComment) {
+        if (preg_match('/@JSONPropertyOrder(?=\s|\()(?:\s*\((.*?)\))?/m', $classDocComment, $annotationMatches)) {
+            $annotation = $annotationMatches[0];
+
+            if (count($annotationMatches) > 1) {
+                if (preg_match('/^\s*$/m', $annotationMatches[1])) {
+                    // empty annotation, allow
+                    return;
+                }
+                if (preg_match('/^\s*alphabetical\s*=\s*(true|false)\s*$/m', $annotationMatches[1], $matches)) {
+                    if ($matches[1] === 'true') {
+                        $classDescriptor->orderProperties();
+                    }
+                    return;
+                }
+                if (preg_match('/^\s*properties\s*=\s*\{\s*([^}]*)\s*\}\s*$/m', $annotationMatches[1], $matches)) {
+                    if (preg_match_all('/(?<=^|,)\s*(["\'])(.*?)\1\s*(?=,|$)/m', $matches[1], $matches)) {
+                        $propertyNames = $matches[2];
+                    } else {
+                        $propertyNames = array();
+                    }
+                    $classDescriptor->orderProperties($propertyNames);
+                    return;
+                }
             }
+            throw new JSONMappingException("Incorrectly formatted @JSONPropertyOrder: $annotation");
         }
     }
 
@@ -577,17 +601,17 @@ class ObjectMapper {
 
     // generic
 
-    private function parseAnnotations($docComment) {
-        $annotations = array();
+    private function hasMarkerAnnotation($docComment, $annotationName) {
+        if (preg_match('/@' . $annotationName . '(?=\s|\()(?:\s*\(\s*(\S+)\s*\))?/m', $docComment, $annotationMatches)) {
+            $annotation = $annotationMatches[0];
 
-        $pattern = '/@(?P<name>[A-Za-z_-]+)(?:[ \t]+(?P<value>.*?))?[ \t]*\r?$/m';
-        if (preg_match_all($pattern, $docComment, $matches)) {
-            $matchCount = count($matches[0]);
-            for ($i = 0; $i < $matchCount; $i++) {
-                $annotations[$matches['name'][$i]][] = $matches['value'][$i];
+            if (count($annotationMatches) > 1) {
+                throw new JSONMappingException("Incorrectly formatted @$annotationName: $annotation");
             }
+
+            return true;
         }
-        return $annotations;
+        return false;
     }
 
     // reflection
@@ -611,108 +635,123 @@ class ObjectMapper {
 
     // classes
 
-    private function getAccessorType($classAnnotations) {
-        if (array_key_exists('JSONAccessorType', $classAnnotations)) {
-            $accessorType = $classAnnotations['JSONAccessorType'][0];
-            $validAccessorTypes = array(
-                self::$ACCESSOR_TYPE_METHOD,
-                self::$ACCESSOR_TYPE_PROPERTY,
-                self::$ACCESSOR_TYPE_PUBLIC_MEMBER,
-                self::$ACCESSOR_TYPE_NONE,
-            );
-            if (in_array($accessorType, $validAccessorTypes)) {
-                return $accessorType;
+    private function getAccessorType($classDocComment) {
+        if (preg_match('/@JSONAccessorType(?=\s|\()(?:\s*\((.*)\))?/m', $classDocComment, $annotationMatches)) {
+            $annotation = $annotationMatches[0];
+
+            if (count($annotationMatches) > 1 && preg_match('/^\s*(?:value\s*=\s*)?(["\'])(.*?)\1\s*$/m', $annotationMatches[1], $matches)) {
+                $accessorType = $matches[2];
+                $validAccessorTypes = array(
+                    self::$ACCESSOR_TYPE_METHOD,
+                    self::$ACCESSOR_TYPE_PROPERTY,
+                    self::$ACCESSOR_TYPE_PUBLIC_MEMBER,
+                    self::$ACCESSOR_TYPE_NONE,
+                );
+                if (in_array($accessorType, $validAccessorTypes)) {
+                    return $accessorType;
+                }
+                throw new JSONMappingException("Invalid value for @JSONAccessorType: $accessorType");
             }
-            throw new JSONMappingException("Invalid value for @JSONAccessorType: $accessorType");
+            throw new JSONMappingException("Incorrectly formatted @JSONAccessorType: $annotation");
         }
         return self::$ACCESSOR_TYPE_PUBLIC_MEMBER;
     }
 
     // members
 
-    private function includeMember($member, $accessorType, $memberAnnotations, $expectedMemberAccessorType) {
-        if (array_key_exists('JSONIgnore', $memberAnnotations)) {
+    private function includeMember($member, $accessorType, $memberDocComment, $expectedMemberAccessorType) {
+        if ($this->hasMarkerAnnotation($memberDocComment, 'JSONIgnore')) {
             return false;
         }
-        if (array_key_exists('JSONProperty', $memberAnnotations)) {
+        if (preg_match('/@JSONProperty(?=\s|\()(?:\s*\(.*\))?/m', $memberDocComment)) {
             return true;
         }
         return ($accessorType === self::$ACCESSOR_TYPE_PUBLIC_MEMBER && $member->isPublic()) || $accessorType === $expectedMemberAccessorType;
     }
 
-    private function getJSONPropertyName($candidate, $memberAnnotations) {
-        if (array_key_exists('JSONProperty', $memberAnnotations)) {
-            $result = $memberAnnotations['JSONProperty'][0];
-            if ($result !== '') {
-                return $result;
+    private function getJSONPropertyName($candidate, $memberDocComment) {
+        if (preg_match('/@JSONProperty(?=\s|\()(?:\s*\((.*)\))?/m', $memberDocComment, $annotationMatches)) {
+            $annotation = $annotationMatches[0];
+
+            if (count($annotationMatches) > 1) {
+                if (preg_match('/^\s*name\s*=\s*(["\'])(.+?)\1\s*$/m', $annotationMatches[1], $matches)) {
+                    return $matches[2];
+                }
+                if (!preg_match('/^\s*$/m', $annotationMatches[1])) {
+                    throw new JSONMappingException("Incorrectly formatted @JSONProperty: $annotation");
+                }
+                // else empty annotation, use the candidate
             }
         }
         return $candidate;
     }
 
-    private function getSerializer($member, $memberAnnotations) {
-        return $this->getSerializerOrDeserializer($member, $memberAnnotations, 'JSONSerializer', 'Robtimus\\JSON\\Mapper\\JSONSerializer');
+    private function getSerializer($member, $memberDocComment) {
+        return $this->getSerializerOrDeserializer($member, $memberDocComment, 'JSONSerialize', 'JSONSerializer');
     }
 
-    private function getDeserializer($member, $memberAnnotations) {
-        return $this->getSerializerOrDeserializer($member, $memberAnnotations, 'JSONDeserializer', 'Robtimus\\JSON\\Mapper\\JSONDeserializer');
+    private function getDeserializer($member, $memberDocComment) {
+        return $this->getSerializerOrDeserializer($member, $memberDocComment, 'JSONDeserialize', 'JSONDeserializer');
     }
 
-    private function getSerializerOrDeserializer($member, $memberAnnotations, $annotation, $interface) {
-        if (array_key_exists($annotation, $memberAnnotations)) {
-            $type = $memberAnnotations[$annotation][0];
-            if ($type === '') {
-                $memberType = is_a('\ReflectionMethod', $member) ? 'method' : 'property';
-                $memberName = $member->getName();
-                $className = $member->getDeclaringClass()->getName();
-                throw new JSONMappingException("Missing @$annotation type for $memberType '$memberName' of class $className");
-            }
-            $type = explode(' ', $type)[0];
-            $type = explode('|', $type)[0];
-            $type = TypeHelper::resolveType($type, $member->getDeclaringClass());
-            if (TypeHelper::isScalarType($type) || substr($type, -2) === '[]') {
-                $memberType = is_a('\ReflectionMethod', $member) ? 'method' : 'property';
-                $memberName = $member->getName();
-                $className = $member->getDeclaringClass()->getName();
-                throw new JSONMappingException("Invalid @$annotation type for $memberType '$memberName' of class $className");
-            }
+    private function getSerializerOrDeserializer($member, $memberDocComment, $annotationName, $interface) {
+        if (preg_match('/@' . $annotationName . '(?=\s|\()(?:\s*\((.*)\))?/m', $memberDocComment, $annotationMatches)) {
+            $annotation = $annotationMatches[0];
 
-            $class = new ReflectionClass($type);
-            if (!$class->implementsInterface($interface)) {
-                $memberType = is_a('\ReflectionMethod', $member) ? 'method' : 'property';
-                $memberName = $member->getName();
-                $className = $member->getDeclaringClass()->getName();
-                throw new JSONMappingException("Invalid @$annotation type for $memberType '$memberName' of class $className");
-            }
+            if (count($annotationMatches) > 1) {
+                if (preg_match('/^\s*using\s*=\s*(["\'])(\S+?)\1\s*$/m', $annotationMatches[1], $matches)) {
+                    $type = $matches[2];
+                    $type = explode('|', $type)[0];
+                    $type = TypeHelper::resolveType($type, $member->getDeclaringClass());
+                    if (TypeHelper::isScalarType($type) || substr($type, -2) === '[]') {
+                        $memberType = is_a('\ReflectionMethod', $member) ? 'method' : 'property';
+                        $memberName = $member->getName();
+                        $className = $member->getDeclaringClass()->getName();
+                        throw new JSONMappingException("Invalid type in @$annotationName.uses for $memberType '$memberName' of class $className");
+                    }
 
-            if (!array_key_exists($type, $this->instanceCache)) {
-                $this->instanceCache[$type] = $this->createInstance($class);
+                    $class = new ReflectionClass($type);
+                    if (!$class->implementsInterface('Robtimus\\JSON\\Mapper\\' . $interface)) {
+                        $memberType = is_a('\ReflectionMethod', $member) ? 'method' : 'property';
+                        $memberName = $member->getName();
+                        $className = $member->getDeclaringClass()->getName();
+                        throw new JSONMappingException("Invalid type in @$annotationName.uses for $memberType '$memberName' of class $className");
+                    }
+
+                    if (!array_key_exists($type, $this->instanceCache)) {
+                        $this->instanceCache[$type] = $this->createInstance($class);
+                    }
+                    return $this->instanceCache[$type];
+                }
             }
-            return $this->instanceCache[$type];
+            throw new JSONMappingException("Incorrectly formatted @$annotationName: $annotation");
         }
         return null;
     }
 
     // properties
 
-    private function includeProperty($property, $accessorType, $propertyAnnotations) {
-        return $this->includeMember($property, $accessorType, $propertyAnnotations, self::$ACCESSOR_TYPE_PROPERTY);
+    private function includeProperty($property, $accessorType, $propertyDocComment) {
+        return $this->includeMember($property, $accessorType, $propertyDocComment, self::$ACCESSOR_TYPE_PROPERTY);
     }
 
-    private function getPropertyType($property, $propertyAnnotations) {
-        $type = array_key_exists('var', $propertyAnnotations) ? $propertyAnnotations['var'][0] : '';
-        if ($type === '') {
-            $propertyName = $property->getName();
-            $className = $property->getDeclaringClass()->getName();
-            throw new JSONMappingException("Missing @var type for property '$propertyName' of class $className");
+    private function getPropertyType($property, $propertyDocComment) {
+        if (preg_match('/@var(?:\s+(\S+))?/m', $propertyDocComment, $annotationMatches)) {
+            $type = $annotationMatches[1];
+            $type = explode('|', $type)[0];
+            if ($type !== '' && !preg_match('/^\*+\/$/', $type)) {
+                return TypeHelper::resolveType($type, $property->getDeclaringClass());
+            }
         }
-        return TypeHelper::resolveType($type, $property->getDeclaringClass());
+        $propertyName = $property->getName();
+        $className = $property->getDeclaringClass()->getName();
+        throw new JSONMappingException("Missing @var type for property '$propertyName' of class $className");
     }
 
     // methods
 
-    private function includeMethod($method, $accessorType, $methodAnnotations) {
-        return $this->includeMember($method, $accessorType, $methodAnnotations, self::$ACCESSOR_TYPE_METHOD);
+    private function includeMethod($method, $accessorType, $methodDocComment) {
+        return $this->includeMember($method, $accessorType, $methodDocComment, self::$ACCESSOR_TYPE_METHOD);
     }
 
     private function extractPropertyNameFromMethod($methodName, $prefixLength) {
@@ -727,43 +766,30 @@ class ObjectMapper {
         return $result === '' ? '' : strtolower(substr($result, 0, 1)) . substr($result, 1);
     }
 
-    private function getReturnType(ReflectionMethod $method, $methodAnnotations) {
-        $type = array_key_exists('return', $methodAnnotations) ? $methodAnnotations['return'][0] : '';
-        if ($type === '') {
-            $methodName = $method->getName();
-            $className = $method->getDeclaringClass()->getName();
-            throw new JSONMappingException("Missing @return type for method '$methodName' of class $className");
-        }
-        $type = explode(' ', $type)[0];
-        $type = explode('|', $type)[0];
-        return TypeHelper::resolveType($type, $method->getDeclaringClass());
-    }
-
-    private function getParameterType(ReflectionMethod $method, $methodAnnotations) {
-        $parameterTypes = $this->parseParameters($methodAnnotations);
-        $parameterName = $method->getParameters()[0]->getName();
-        $type = array_key_exists($parameterName, $parameterTypes) ? $parameterTypes[$parameterName] : '';
-        if ($type === '') {
-            $methodName = $method->getName();
-            $className = $method->getDeclaringClass()->getName();
-            throw new JSONMappingException("Missing @param type for parameter '$parameterName' of method '$methodName' of class $className");
-        }
-        $type = explode(' ', $type)[0];
-        $type = explode('|', $type)[0];
-        return TypeHelper::resolveType($type, $method->getDeclaringClass());
-    }
-
-    private function parseParameters($methodAnnotations) {
-        $parameters = array();
-
-        $pattern = '/^(?P<type>[A-Za-z0-9\\\\_-]+)[ \t]+\\$(?P<name>\S+?)[ \t]*.*\r?$/';
-        if (array_key_exists('param', $methodAnnotations)) {
-            foreach ($methodAnnotations['param'] as $value) {
-                if (preg_match($pattern, $value, $matches)) {
-                    $parameters[$matches['name']] = $matches['type'];
-                }
+    private function getReturnType(ReflectionMethod $method, $methodDocComment) {
+        if (preg_match('/@return(?:\s+(\S+))?/m', $methodDocComment, $annotationMatches)) {
+            $type = $annotationMatches[1];
+            $type = explode('|', $type)[0];
+            if ($type !== '' && !preg_match('/^\*+\/$/', $type)) {
+                return TypeHelper::resolveType($type, $method->getDeclaringClass());
             }
         }
-        return $parameters;
+        $methodName = $method->getName();
+        $className = $method->getDeclaringClass()->getName();
+        throw new JSONMappingException("Missing @return type for method '$methodName' of class $className");
+    }
+
+    private function getParameterType(ReflectionMethod $method, $methodDocComment) {
+        $parameterName = $method->getParameters()[0]->getName();
+        if (preg_match('/@param\s+(\S+)\s+\$' . $parameterName . '/m', $methodDocComment, $annotationMatches)) {
+            $type = $annotationMatches[1];
+            $type = explode('|', $type)[0];
+            if ($type !== '' && !preg_match('/^\*+\/$/', $type)) {
+                return TypeHelper::resolveType($type, $method->getDeclaringClass());
+            }
+        }
+        $methodName = $method->getName();
+        $className = $method->getDeclaringClass()->getName();
+        throw new JSONMappingException("Missing @param type for parameter '$parameterName' of method '$methodName' of class $className");
     }
 }

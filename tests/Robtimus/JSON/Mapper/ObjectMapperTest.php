@@ -22,12 +22,28 @@ class ObjectMapperTest extends TestCase {
 
         $mapper = new ObjectMapper();
 
-        $classAnnotations = array();
+        $method = new ReflectionMethod($mapper, 'orderProperties');
+        $method->setAccessible(true);
+
+        $method->invoke($mapper, $classDescriptor, '');
+
+        $properties = $classDescriptor->properties();
+
+        $this->assertEquals(array('z', 'y', 'x'), array_keys($properties));
+    }
+
+    public function testOrderPropertiesEmptyAnnotation() {
+        $classDescriptor = new ClassDescriptor(new ReflectionClass('stdClass'));
+        $classDescriptor->addProperty('z', 'int');
+        $classDescriptor->addProperty('y', 'int');
+        $classDescriptor->addProperty('x', 'int');
+
+        $mapper = new ObjectMapper();
 
         $method = new ReflectionMethod($mapper, 'orderProperties');
         $method->setAccessible(true);
 
-        $method->invoke($mapper, $classDescriptor, $classAnnotations);
+        $method->invoke($mapper, $classDescriptor, '/** @JSONPropertyOrder( ) */');
 
         $properties = $classDescriptor->properties();
 
@@ -42,16 +58,32 @@ class ObjectMapperTest extends TestCase {
 
         $mapper = new ObjectMapper();
 
-        $classAnnotations = array('JSONPropertyOrder' => array('ALPHABETICAL'));
-
         $method = new ReflectionMethod($mapper, 'orderProperties');
         $method->setAccessible(true);
 
-        $method->invoke($mapper, $classDescriptor, $classAnnotations);
+        $method->invoke($mapper, $classDescriptor, '/** @JSONPropertyOrder ( alphabetical = true ) */');
 
         $properties = $classDescriptor->properties();
 
         $this->assertEquals(array('x', 'y', 'z'), array_keys($properties));
+    }
+
+    public function testOrderPropertiesAlphabeticalFalse() {
+        $classDescriptor = new ClassDescriptor(new ReflectionClass('stdClass'));
+        $classDescriptor->addProperty('z', 'int');
+        $classDescriptor->addProperty('y', 'int');
+        $classDescriptor->addProperty('x', 'int');
+
+        $mapper = new ObjectMapper();
+
+        $method = new ReflectionMethod($mapper, 'orderProperties');
+        $method->setAccessible(true);
+
+        $method->invoke($mapper, $classDescriptor, '/** @JSONPropertyOrder ( alphabetical = false ) */');
+
+        $properties = $classDescriptor->properties();
+
+        $this->assertEquals(array('z', 'y', 'x'), array_keys($properties));
     }
 
     public function testOrderPropertiesSpecified() {
@@ -62,44 +94,54 @@ class ObjectMapperTest extends TestCase {
 
         $mapper = new ObjectMapper();
 
-        $classAnnotations = array('JSONPropertyOrder' => array('y, x, z'));
-
         $method = new ReflectionMethod($mapper, 'orderProperties');
         $method->setAccessible(true);
 
-        $method->invoke($mapper, $classDescriptor, $classAnnotations);
+        $method->invoke($mapper, $classDescriptor, '/** @JSONPropertyOrder ( properties = { "y", \'x\', "z" } ) */');
 
         $properties = $classDescriptor->properties();
 
         $this->assertEquals(array('y', 'x', 'z'), array_keys($properties));
     }
 
-    // parseAnnotations
-
-    public function testParseAnnotations() {
-        $docComment = <<<DOCCOMMENT
-Here is some text
-
-@param int \$x some number  
-@return string return value  
-@return int second return value  
-@JSONProperty  
-DOCCOMMENT;
+    public function testOrderPropertiesEmptySpecified() {
+        $classDescriptor = new ClassDescriptor(new ReflectionClass('stdClass'));
+        $classDescriptor->addProperty('z', 'int');
+        $classDescriptor->addProperty('y', 'int');
+        $classDescriptor->addProperty('x', 'int');
 
         $mapper = new ObjectMapper();
 
-        $method = new ReflectionMethod($mapper, 'parseAnnotations');
+        $method = new ReflectionMethod($mapper, 'orderProperties');
         $method->setAccessible(true);
 
-        $parsed = $method->invoke($mapper, $docComment);
+        try {
+            $method->invoke($mapper, $classDescriptor, '/** @JSONPropertyOrder ( properties = { } ) */');
+        } catch (JSONMappingException $e) {
+            $this->assertEquals('Properties must include all properties for class stdClass; expected: z,y,x, given: ', $e->getMessage());
+            return;
+        }
+        $this->fail('Expected a JSONMappingException');
+    }
 
-        $expected = array(
-            'param'        => array('int $x some number'),
-            'return'       => array('string return value', 'int second return value'),
-            'JSONProperty' => array('')
-        );
+    public function testOrderPropertiesWithInvalidlyFormattedJSONPropertyOrder() {
+        $classDescriptor = new ClassDescriptor(new ReflectionClass('stdClass'));
+        $classDescriptor->addProperty('z', 'int');
+        $classDescriptor->addProperty('y', 'int');
+        $classDescriptor->addProperty('x', 'int');
 
-        $this->assertEquals($expected, $parsed);
+        $mapper = new ObjectMapper();
+
+        $method = new ReflectionMethod($mapper, 'orderProperties');
+        $method->setAccessible(true);
+
+        try {
+            $method->invoke($mapper, $classDescriptor, '/** @JSONPropertyOrder ( properties = {  ) */');
+        } catch (JSONMappingException $e) {
+            $this->assertEquals('Incorrectly formatted @JSONPropertyOrder: @JSONPropertyOrder ( properties = {  )', $e->getMessage());
+            return;
+        }
+        $this->fail('Expected a JSONMappingException');
     }
 
     // createInstance
@@ -230,12 +272,10 @@ DOCCOMMENT;
     public function testGetAccessorTypeNotPresent() {
         $mapper = new ObjectMapper();
 
-        $annotations = getAnnotations($mapper, new ReflectionClass(new ClassWithNoAccessorType()));
-
         $method = new ReflectionMethod($mapper, 'getAccessorType');
         $method->setAccessible(true);
 
-        $accessorType = $method->invoke($mapper, $annotations);
+        $accessorType = $method->invoke($mapper, '');
 
         $this->assertEquals('PUBLIC_MEMBER', $accessorType);
     }
@@ -243,12 +283,14 @@ DOCCOMMENT;
     public function testGetAccessorTypeWithValidAccessorType() {
         $mapper = new ObjectMapper();
 
-        $annotations = getAnnotations($mapper, new ReflectionClass(new ClassWithValidAccessorType()));
-
         $method = new ReflectionMethod($mapper, 'getAccessorType');
         $method->setAccessible(true);
 
-        $accessorType = $method->invoke($mapper, $annotations);
+        $accessorType = $method->invoke($mapper, '/** @JSONAccessorType ( value = "PROPERTY" ) */');
+
+        $this->assertEquals('PROPERTY', $accessorType);
+
+        $accessorType = $method->invoke($mapper, '/** @JSONAccessorType ( "PROPERTY" ) */');
 
         $this->assertEquals('PROPERTY', $accessorType);
     }
@@ -256,15 +298,43 @@ DOCCOMMENT;
     public function testGetAccessorTypeWithInvalidAccessorType() {
         $mapper = new ObjectMapper();
 
-        $annotations = getAnnotations($mapper, new ReflectionClass(new ClassWithInvalidAccessorType()));
+        $method = new ReflectionMethod($mapper, 'getAccessorType');
+        $method->setAccessible(true);
+
+        try {
+            $method->invoke($mapper, "/** @JSONAccessorType(value='FIELD') */");
+        } catch (JSONMappingException $e) {
+            $this->assertEquals("Invalid value for @JSONAccessorType: FIELD", $e->getMessage());
+            return;
+        }
+        $this->fail('Expected a JSONMappingException');
+    }
+
+    public function testGetAccessorTypeWithAccessorTypeWithoutValue() {
+        $mapper = new ObjectMapper();
 
         $method = new ReflectionMethod($mapper, 'getAccessorType');
         $method->setAccessible(true);
 
         try {
-            $method->invoke($mapper, $annotations);
+            $method->invoke($mapper, '/** @JSONAccessorType */');
         } catch (JSONMappingException $e) {
-            $this->assertEquals("Invalid value for @JSONAccessorType: FIELD", $e->getMessage());
+            $this->assertEquals('Incorrectly formatted @JSONAccessorType: @JSONAccessorType', $e->getMessage());
+            return;
+        }
+        $this->fail('Expected a JSONMappingException');
+    }
+
+    public function testGetAccessorTypeWithInvalidlyFormattedAccessorType() {
+        $mapper = new ObjectMapper();
+
+        $method = new ReflectionMethod($mapper, 'getAccessorType');
+        $method->setAccessible(true);
+
+        try {
+            $method->invoke($mapper, '/** @JSONAccessorType(type="PROPERTY") */');
+        } catch (JSONMappingException $e) {
+            $this->assertEquals('Incorrectly formatted @JSONAccessorType: @JSONAccessorType(type="PROPERTY")', $e->getMessage());
             return;
         }
         $this->fail('Expected a JSONMappingException');
@@ -278,7 +348,7 @@ DOCCOMMENT;
         $method = new ReflectionMethod($mapper, 'getJSONPropertyName');
         $method->setAccessible(true);
 
-        $name = $method->invoke($mapper, 'name', array());
+        $name = $method->invoke($mapper, 'name', '');
 
         $this->assertEquals('name', $name);
     }
@@ -289,20 +359,39 @@ DOCCOMMENT;
         $method = new ReflectionMethod($mapper, 'getJSONPropertyName');
         $method->setAccessible(true);
 
-        $name = $method->invoke($mapper, 'name', array('JSONProperty' => array('')));
+        $name = $method->invoke($mapper, 'name', '/** @JSONProperty */');
+
+        $this->assertEquals('name', $name);
+
+        $name = $method->invoke($mapper, 'name', '/** @JSONProperty ( ) */');
 
         $this->assertEquals('name', $name);
     }
 
-    public function testGetJSONPropertyNameNonemptyAnnotation() {
+    public function testGetJSONPropertyNameNonEmptyAnnotation() {
         $mapper = new ObjectMapper();
 
         $method = new ReflectionMethod($mapper, 'getJSONPropertyName');
         $method->setAccessible(true);
 
-        $name = $method->invoke($mapper, 'name', array('JSONProperty' => array('otherName')));
+        $name = $method->invoke($mapper, 'name', '/** @JSONProperty ( name = "otherName" ) */');
 
         $this->assertEquals('otherName', $name);
+    }
+
+    public function testGetJSONPropertyNameInvalidAnnotation() {
+        $mapper = new ObjectMapper();
+
+        $method = new ReflectionMethod($mapper, 'getJSONPropertyName');
+        $method->setAccessible(true);
+
+        try {
+            $method->invoke($mapper, 'name', '/** @JSONProperty ( value = "otherName" ) */');
+        } catch (JSONMappingException $e) {
+            $this->assertEquals('Incorrectly formatted @JSONProperty: @JSONProperty ( value = "otherName" )', $e->getMessage());
+            return;
+        }
+        $this->fail('Expected a JSONMappingException');
     }
 
     // getSerializer
@@ -311,12 +400,11 @@ DOCCOMMENT;
         $mapper = new ObjectMapper();
 
         $member = new ReflectionProperty('Robtimus\\JSON\\Mapper\\ClassWithFieldAndMethods', 'x');
-        $memberAnnotations = array();
 
         $method = new ReflectionMethod($mapper, 'getSerializer');
         $method->setAccessible(true);
 
-        $serializer = $method->invoke($mapper, $member, $memberAnnotations);
+        $serializer = $method->invoke($mapper, $member, '');
 
         $this->assertNull($serializer);
     }
@@ -325,17 +413,14 @@ DOCCOMMENT;
         $mapper = new ObjectMapper();
 
         $member = new ReflectionProperty('Robtimus\\JSON\\Mapper\\ClassWithFieldAndMethods', 'x');
-        $memberAnnotations = array(
-            'JSONSerializer' => array('')
-        );
 
         $method = new ReflectionMethod($mapper, 'getSerializer');
         $method->setAccessible(true);
 
         try {
-            $method->invoke($mapper, $member, $memberAnnotations);
+            $method->invoke($mapper, $member, '/** @JSONSerialize(using=" ") */');
         } catch (JSONMappingException $e) {
-            $this->assertEquals("Missing @JSONSerializer type for property 'x' of class Robtimus\\JSON\\Mapper\\ClassWithFieldAndMethods", $e->getMessage());
+            $this->assertEquals('Incorrectly formatted @JSONSerialize: @JSONSerialize(using=" ")', $e->getMessage());
             return;
         }
         $this->fail('Expected a JSONMappingException');
@@ -345,17 +430,14 @@ DOCCOMMENT;
         $mapper = new ObjectMapper();
 
         $member = new ReflectionProperty('Robtimus\\JSON\\Mapper\\ClassWithFieldAndMethods', 'x');
-        $memberAnnotations = array(
-            'JSONSerializer' => array('int')
-        );
 
         $method = new ReflectionMethod($mapper, 'getSerializer');
         $method->setAccessible(true);
 
         try {
-            $method->invoke($mapper, $member, $memberAnnotations);
+            $method->invoke($mapper, $member, '/** @JSONSerialize(using="int")');
         } catch (JSONMappingException $e) {
-            $this->assertEquals("Invalid @JSONSerializer type for property 'x' of class Robtimus\\JSON\\Mapper\\ClassWithFieldAndMethods", $e->getMessage());
+            $this->assertEquals("Invalid type in @JSONSerialize.uses for property 'x' of class Robtimus\\JSON\\Mapper\\ClassWithFieldAndMethods", $e->getMessage());
             return;
         }
         $this->fail('Expected a JSONMappingException');
@@ -365,17 +447,14 @@ DOCCOMMENT;
         $mapper = new ObjectMapper();
 
         $member = new ReflectionProperty('Robtimus\\JSON\\Mapper\\ClassWithFieldAndMethods', 'x');
-        $memberAnnotations = array(
-            'JSONSerializer' => array('\stdClass[]')
-        );
 
         $method = new ReflectionMethod($mapper, 'getSerializer');
         $method->setAccessible(true);
 
         try {
-            $method->invoke($mapper, $member, $memberAnnotations);
+            $method->invoke($mapper, $member, '/** @JSONSerialize(using="\stdClass[]") */');
         } catch (JSONMappingException $e) {
-            $this->assertEquals("Invalid @JSONSerializer type for property 'x' of class Robtimus\\JSON\\Mapper\\ClassWithFieldAndMethods", $e->getMessage());
+            $this->assertEquals("Invalid type in @JSONSerialize.uses for property 'x' of class Robtimus\\JSON\\Mapper\\ClassWithFieldAndMethods", $e->getMessage());
             return;
         }
         $this->fail('Expected a JSONMappingException');
@@ -385,17 +464,14 @@ DOCCOMMENT;
         $mapper = new ObjectMapper();
 
         $member = new ReflectionProperty('Robtimus\\JSON\\Mapper\\ClassWithFieldAndMethods', 'x');
-        $memberAnnotations = array(
-            'JSONSerializer' => array('\stdClass')
-        );
 
         $method = new ReflectionMethod($mapper, 'getSerializer');
         $method->setAccessible(true);
 
         try {
-            $method->invoke($mapper, $member, $memberAnnotations);
+            $method->invoke($mapper, $member, '/** @JSONSerialize(using="\stdClass") */');
         } catch (JSONMappingException $e) {
-            $this->assertEquals("Invalid @JSONSerializer type for property 'x' of class Robtimus\\JSON\\Mapper\\ClassWithFieldAndMethods", $e->getMessage());
+            $this->assertEquals("Invalid type in @JSONSerialize.uses for property 'x' of class Robtimus\\JSON\\Mapper\\ClassWithFieldAndMethods", $e->getMessage());
             return;
         }
         $this->fail('Expected a JSONMappingException');
@@ -405,18 +481,16 @@ DOCCOMMENT;
         $mapper = new ObjectMapper();
 
         $member = new ReflectionProperty('Robtimus\\JSON\\Mapper\\ClassWithFieldAndMethods', 'x');
-        $memberAnnotations = array(
-            'JSONSerializer' => array('DummySerializer')
-        );
+        $docComment = '/** @JSONSerialize ( using = "DummySerializer" ) */';
 
         $method = new ReflectionMethod($mapper, 'getSerializer');
         $method->setAccessible(true);
 
-        $serializer = $method->invoke($mapper, $member, $memberAnnotations);
+        $serializer = $method->invoke($mapper, $member, $docComment);
 
         $this->assertInstanceOf('Robtimus\\JSON\\Mapper\\JSONSerializer', $serializer);
 
-        $secondSerializer = $method->invoke($mapper, $member, $memberAnnotations);
+        $secondSerializer = $method->invoke($mapper, $member, $docComment);
 
         $this->assertSame($serializer, $secondSerializer);
     }
@@ -427,12 +501,11 @@ DOCCOMMENT;
         $mapper = new ObjectMapper();
 
         $member = new ReflectionProperty('Robtimus\\JSON\\Mapper\\ClassWithFieldAndMethods', 'x');
-        $memberAnnotations = array();
 
         $method = new ReflectionMethod($mapper, 'getDeserializer');
         $method->setAccessible(true);
 
-        $deserializer = $method->invoke($mapper, $member, $memberAnnotations);
+        $deserializer = $method->invoke($mapper, $member, '');
 
         $this->assertNull($deserializer);
     }
@@ -441,17 +514,14 @@ DOCCOMMENT;
         $mapper = new ObjectMapper();
 
         $member = new ReflectionProperty('Robtimus\\JSON\\Mapper\\ClassWithFieldAndMethods', 'x');
-        $memberAnnotations = array(
-            'JSONDeserializer' => array('')
-        );
 
         $method = new ReflectionMethod($mapper, 'getDeserializer');
         $method->setAccessible(true);
 
         try {
-            $method->invoke($mapper, $member, $memberAnnotations);
+            $method->invoke($mapper, $member, '/** @JSONDeserialize(using=" ") */');
         } catch (JSONMappingException $e) {
-            $this->assertEquals("Missing @JSONDeserializer type for property 'x' of class Robtimus\\JSON\\Mapper\\ClassWithFieldAndMethods", $e->getMessage());
+            $this->assertEquals('Incorrectly formatted @JSONDeserialize: @JSONDeserialize(using=" ")', $e->getMessage());
             return;
         }
         $this->fail('Expected a JSONMappingException');
@@ -461,17 +531,14 @@ DOCCOMMENT;
         $mapper = new ObjectMapper();
 
         $member = new ReflectionProperty('Robtimus\\JSON\\Mapper\\ClassWithFieldAndMethods', 'x');
-        $memberAnnotations = array(
-            'JSONDeserializer' => array('int')
-        );
 
         $method = new ReflectionMethod($mapper, 'getDeserializer');
         $method->setAccessible(true);
 
         try {
-            $method->invoke($mapper, $member, $memberAnnotations);
+            $method->invoke($mapper, $member, '/** @JSONDeserialize(using="int") */');
         } catch (JSONMappingException $e) {
-            $this->assertEquals("Invalid @JSONDeserializer type for property 'x' of class Robtimus\\JSON\\Mapper\\ClassWithFieldAndMethods", $e->getMessage());
+            $this->assertEquals("Invalid type in @JSONDeserialize.uses for property 'x' of class Robtimus\\JSON\\Mapper\\ClassWithFieldAndMethods", $e->getMessage());
             return;
         }
         $this->fail('Expected a JSONMappingException');
@@ -481,17 +548,14 @@ DOCCOMMENT;
         $mapper = new ObjectMapper();
 
         $member = new ReflectionProperty('Robtimus\\JSON\\Mapper\\ClassWithFieldAndMethods', 'x');
-        $memberAnnotations = array(
-            'JSONDeserializer' => array('\stdClass[]')
-        );
 
         $method = new ReflectionMethod($mapper, 'getDeserializer');
         $method->setAccessible(true);
 
         try {
-            $method->invoke($mapper, $member, $memberAnnotations);
+            $method->invoke($mapper, $member, '/** @JSONDeserialize(using="\stdClass[]") */');
         } catch (JSONMappingException $e) {
-            $this->assertEquals("Invalid @JSONDeserializer type for property 'x' of class Robtimus\\JSON\\Mapper\\ClassWithFieldAndMethods", $e->getMessage());
+            $this->assertEquals("Invalid type in @JSONDeserialize.uses for property 'x' of class Robtimus\\JSON\\Mapper\\ClassWithFieldAndMethods", $e->getMessage());
             return;
         }
         $this->fail('Expected a JSONMappingException');
@@ -501,17 +565,14 @@ DOCCOMMENT;
         $mapper = new ObjectMapper();
 
         $member = new ReflectionProperty('Robtimus\\JSON\\Mapper\\ClassWithFieldAndMethods', 'x');
-        $memberAnnotations = array(
-            'JSONDeserializer' => array('\stdClass')
-        );
 
         $method = new ReflectionMethod($mapper, 'getDeserializer');
         $method->setAccessible(true);
 
         try {
-            $method->invoke($mapper, $member, $memberAnnotations);
+            $method->invoke($mapper, $member, '/** @JSONDeserialize(using="\stdClass") */');
         } catch (JSONMappingException $e) {
-            $this->assertEquals("Invalid @JSONDeserializer type for property 'x' of class Robtimus\\JSON\\Mapper\\ClassWithFieldAndMethods", $e->getMessage());
+            $this->assertEquals("Invalid type in @JSONDeserialize.uses for property 'x' of class Robtimus\\JSON\\Mapper\\ClassWithFieldAndMethods", $e->getMessage());
             return;
         }
         $this->fail('Expected a JSONMappingException');
@@ -521,18 +582,16 @@ DOCCOMMENT;
         $mapper = new ObjectMapper();
 
         $member = new ReflectionProperty('Robtimus\\JSON\\Mapper\\ClassWithFieldAndMethods', 'x');
-        $memberAnnotations = array(
-            'JSONDeserializer' => array('DummyDeserializer')
-        );
+        $docComment = '/** @JSONDeserialize ( using = "DummyDeserializer" ) */';
 
         $method = new ReflectionMethod($mapper, 'getDeserializer');
         $method->setAccessible(true);
 
-        $deserializer = $method->invoke($mapper, $member, $memberAnnotations);
+        $deserializer = $method->invoke($mapper, $member, $docComment);
 
         $this->assertInstanceOf('Robtimus\\JSON\\Mapper\\JSONDeserializer', $deserializer);
 
-        $secondDeserializer = $method->invoke($mapper, $member, $memberAnnotations);
+        $secondDeserializer = $method->invoke($mapper, $member, $docComment);
 
         $this->assertSame($deserializer, $secondDeserializer);
     }
@@ -543,14 +602,11 @@ DOCCOMMENT;
         $mapper = new ObjectMapper();
 
         $testProperty = new ReflectionProperty('Robtimus\\JSON\\Mapper\\ClassWithPublicAndNonPublicPropertiesAndMethods', 'nonPublicProperty');
-        $propertyAnnotations = array(
-            'JSONIgnore' => array('')
-        );
 
         $method = new ReflectionMethod($mapper, 'includeProperty');
         $method->setAccessible(true);
 
-        $include = $method->invoke($mapper, $testProperty, 'PROPERTY', $propertyAnnotations);
+        $include = $method->invoke($mapper, $testProperty, 'PROPERTY', '/** @JSONIgnore */');
 
         $this->assertEquals(false, $include);
     }
@@ -559,14 +615,24 @@ DOCCOMMENT;
         $mapper = new ObjectMapper();
 
         $testProperty = new ReflectionProperty('Robtimus\\JSON\\Mapper\\ClassWithPublicAndNonPublicPropertiesAndMethods', 'nonPublicProperty');
-        $propertyAnnotations = array(
-            'JSONProperty' => array('')
-        );
 
         $method = new ReflectionMethod($mapper, 'includeProperty');
         $method->setAccessible(true);
 
-        $include = $method->invoke($mapper, $testProperty, 'NONE', $propertyAnnotations);
+        $include = $method->invoke($mapper, $testProperty, 'NONE', '/** @JSONProperty */');
+
+        $this->assertEquals(true, $include);
+    }
+
+    public function testIncludePropertyIncludedWithName() {
+        $mapper = new ObjectMapper();
+
+        $testProperty = new ReflectionProperty('Robtimus\\JSON\\Mapper\\ClassWithPublicAndNonPublicPropertiesAndMethods', 'nonPublicProperty');
+
+        $method = new ReflectionMethod($mapper, 'includeProperty');
+        $method->setAccessible(true);
+
+        $include = $method->invoke($mapper, $testProperty, 'NONE', '/** @JSONProperty(name="property") */');
 
         $this->assertEquals(true, $include);
     }
@@ -575,12 +641,11 @@ DOCCOMMENT;
         $mapper = new ObjectMapper();
 
         $testProperty = new ReflectionProperty('Robtimus\\JSON\\Mapper\\ClassWithPublicAndNonPublicPropertiesAndMethods', 'publicProperty');
-        $propertyAnnotations = array();
 
         $method = new ReflectionMethod($mapper, 'includeProperty');
         $method->setAccessible(true);
 
-        $include = $method->invoke($mapper, $testProperty, 'PUBLIC_MEMBER', $propertyAnnotations);
+        $include = $method->invoke($mapper, $testProperty, 'PUBLIC_MEMBER', '');
 
         $this->assertEquals(true, $include);
     }
@@ -589,12 +654,11 @@ DOCCOMMENT;
         $mapper = new ObjectMapper();
 
         $testProperty = new ReflectionProperty('Robtimus\\JSON\\Mapper\\ClassWithPublicAndNonPublicPropertiesAndMethods', 'nonPublicProperty');
-        $propertyAnnotations = array();
 
         $method = new ReflectionMethod($mapper, 'includeProperty');
         $method->setAccessible(true);
 
-        $include = $method->invoke($mapper, $testProperty, 'PUBLIC_MEMBER', $propertyAnnotations);
+        $include = $method->invoke($mapper, $testProperty, 'PUBLIC_MEMBER', '');
 
         $this->assertEquals(false, $include);
     }
@@ -603,12 +667,11 @@ DOCCOMMENT;
         $mapper = new ObjectMapper();
 
         $testProperty = new ReflectionProperty('Robtimus\\JSON\\Mapper\\ClassWithPublicAndNonPublicPropertiesAndMethods', 'nonPublicProperty');
-        $propertyAnnotations = array();
 
         $method = new ReflectionMethod($mapper, 'includeProperty');
         $method->setAccessible(true);
 
-        $include = $method->invoke($mapper, $testProperty, 'PROPERTY', $propertyAnnotations);
+        $include = $method->invoke($mapper, $testProperty, 'PROPERTY', '');
 
         $this->assertEquals(true, $include);
     }
@@ -617,12 +680,11 @@ DOCCOMMENT;
         $mapper = new ObjectMapper();
 
         $testProperty = new ReflectionProperty('Robtimus\\JSON\\Mapper\\ClassWithPublicAndNonPublicPropertiesAndMethods', 'nonPublicProperty');
-        $propertyAnnotations = array();
 
         $method = new ReflectionMethod($mapper, 'includeProperty');
         $method->setAccessible(true);
 
-        $include = $method->invoke($mapper, $testProperty, 'METHOD', $propertyAnnotations);
+        $include = $method->invoke($mapper, $testProperty, 'METHOD', '');
 
         $this->assertEquals(false, $include);
     }
@@ -633,15 +695,12 @@ DOCCOMMENT;
         $mapper = new ObjectMapper();
 
         $testProperty = new ReflectionProperty('Robtimus\\JSON\\Mapper\\ClassWithAnnotations', 'notAnnotated');
-        $docComment = $testProperty->getDocComment();
-
-        $propertyAnnotations = getAnnotations($mapper, $docComment);
 
         $method = new ReflectionMethod($mapper, 'getPropertyType');
         $method->setAccessible(true);
 
         try {
-            $method->invoke($mapper, $testProperty, $propertyAnnotations);
+            $method->invoke($mapper, $testProperty, $testProperty->getDocComment());
         } catch (JSONMappingException $e) {
             $this->assertEquals("Missing @var type for property 'notAnnotated' of class Robtimus\\JSON\\Mapper\\ClassWithAnnotations", $e->getMessage());
             return;
@@ -653,14 +712,24 @@ DOCCOMMENT;
         $mapper = new ObjectMapper();
 
         $testProperty = new ReflectionProperty('Robtimus\\JSON\\Mapper\\ClassWithAnnotations', 'properlyAnnotated');
-        $docComment = $testProperty->getDocComment();
-
-        $propertyAnnotations = getAnnotations($mapper, $docComment);
 
         $method = new ReflectionMethod($mapper, 'getPropertyType');
         $method->setAccessible(true);
 
-        $type = $method->invoke($mapper, $testProperty, $propertyAnnotations);
+        $type = $method->invoke($mapper, $testProperty, $testProperty->getDocComment());
+
+        $this->assertEquals('string', $type);
+    }
+
+    public function testGetPropertyTypeWithMinimalAnnotations() {
+        $mapper = new ObjectMapper();
+
+        $testProperty = new ReflectionProperty('Robtimus\\JSON\\Mapper\\ClassWithAnnotations', 'minimallyAnnotated');
+
+        $method = new ReflectionMethod($mapper, 'getPropertyType');
+        $method->setAccessible(true);
+
+        $type = $method->invoke($mapper, $testProperty, $testProperty->getDocComment());
 
         $this->assertEquals('string', $type);
     }
@@ -669,15 +738,12 @@ DOCCOMMENT;
         $mapper = new ObjectMapper();
 
         $testProperty = new ReflectionProperty('Robtimus\\JSON\\Mapper\\ClassWithAnnotations', 'incorrectlyAnnotated');
-        $docComment = $testProperty->getDocComment();
-
-        $propertyAnnotations = getAnnotations($mapper, $docComment);
 
         $method = new ReflectionMethod($mapper, 'getPropertyType');
         $method->setAccessible(true);
 
         try {
-            $method->invoke($mapper, $testProperty, $propertyAnnotations);
+            $method->invoke($mapper, $testProperty, $testProperty->getDocComment());
         } catch (JSONMappingException $e) {
             $this->assertEquals("Missing @var type for property 'incorrectlyAnnotated' of class Robtimus\\JSON\\Mapper\\ClassWithAnnotations", $e->getMessage());
             return;
@@ -691,14 +757,11 @@ DOCCOMMENT;
         $mapper = new ObjectMapper();
 
         $testMethod = new ReflectionMethod('Robtimus\\JSON\\Mapper\\ClassWithPublicAndNonPublicPropertiesAndMethods', 'getNonPublicProperty');
-        $methodAnnotations = array(
-            'JSONIgnore' => array('')
-        );
 
         $method = new ReflectionMethod($mapper, 'includeMethod');
         $method->setAccessible(true);
 
-        $include = $method->invoke($mapper, $testMethod, 'METHOD', $methodAnnotations);
+        $include = $method->invoke($mapper, $testMethod, 'METHOD', '/** @JSONIgnore */');
 
         $this->assertEquals(false, $include);
     }
@@ -707,14 +770,24 @@ DOCCOMMENT;
         $mapper = new ObjectMapper();
 
         $testMethod = new ReflectionMethod('Robtimus\\JSON\\Mapper\\ClassWithPublicAndNonPublicPropertiesAndMethods', 'getNonPublicProperty');
-        $methodAnnotations = array(
-            'JSONProperty' => array('')
-        );
 
         $method = new ReflectionMethod($mapper, 'includeMethod');
         $method->setAccessible(true);
 
-        $include = $method->invoke($mapper, $testMethod, 'NONE', $methodAnnotations);
+        $include = $method->invoke($mapper, $testMethod, 'NONE', '/** @JSONProperty */');
+
+        $this->assertEquals(true, $include);
+    }
+
+    public function testIncludeMethodIncludedWithName() {
+        $mapper = new ObjectMapper();
+
+        $testMethod = new ReflectionMethod('Robtimus\\JSON\\Mapper\\ClassWithPublicAndNonPublicPropertiesAndMethods', 'getNonPublicProperty');
+
+        $method = new ReflectionMethod($mapper, 'includeMethod');
+        $method->setAccessible(true);
+
+        $include = $method->invoke($mapper, $testMethod, 'NONE', '/** @JSONProperty(name="property") */');
 
         $this->assertEquals(true, $include);
     }
@@ -723,12 +796,11 @@ DOCCOMMENT;
         $mapper = new ObjectMapper();
 
         $testMethod = new ReflectionMethod('Robtimus\\JSON\\Mapper\\ClassWithPublicAndNonPublicPropertiesAndMethods', 'getPublicProperty');
-        $methodAnnotations = array();
 
         $method = new ReflectionMethod($mapper, 'includeMethod');
         $method->setAccessible(true);
 
-        $include = $method->invoke($mapper, $testMethod, 'PUBLIC_MEMBER', $methodAnnotations);
+        $include = $method->invoke($mapper, $testMethod, 'PUBLIC_MEMBER', '');
 
         $this->assertEquals(true, $include);
     }
@@ -737,12 +809,11 @@ DOCCOMMENT;
         $mapper = new ObjectMapper();
 
         $testMethod = new ReflectionMethod('Robtimus\\JSON\\Mapper\\ClassWithPublicAndNonPublicPropertiesAndMethods', 'getNonPublicProperty');
-        $methodAnnotations = array();
 
         $method = new ReflectionMethod($mapper, 'includeMethod');
         $method->setAccessible(true);
 
-        $include = $method->invoke($mapper, $testMethod, 'PUBLIC_MEMBER', $methodAnnotations);
+        $include = $method->invoke($mapper, $testMethod, 'PUBLIC_MEMBER', '');
 
         $this->assertEquals(false, $include);
     }
@@ -751,12 +822,11 @@ DOCCOMMENT;
         $mapper = new ObjectMapper();
 
         $testMethod = new ReflectionMethod('Robtimus\\JSON\\Mapper\\ClassWithPublicAndNonPublicPropertiesAndMethods', 'getNonPublicProperty');
-        $methodAnnotations = array();
 
         $method = new ReflectionMethod($mapper, 'includeMethod');
         $method->setAccessible(true);
 
-        $include = $method->invoke($mapper, $testMethod, 'METHOD', $methodAnnotations);
+        $include = $method->invoke($mapper, $testMethod, 'METHOD', '');
 
         $this->assertEquals(true, $include);
     }
@@ -765,12 +835,11 @@ DOCCOMMENT;
         $mapper = new ObjectMapper();
 
         $testMethod = new ReflectionMethod('Robtimus\\JSON\\Mapper\\ClassWithPublicAndNonPublicPropertiesAndMethods', 'getNonPublicProperty');
-        $methodAnnotations = array();
 
         $method = new ReflectionMethod($mapper, 'includeMethod');
         $method->setAccessible(true);
 
-        $include = $method->invoke($mapper, $testMethod, 'PROPERTY', $methodAnnotations);
+        $include = $method->invoke($mapper, $testMethod, 'PROPERTY', '');
 
         $this->assertEquals(false, $include);
     }
@@ -827,15 +896,12 @@ DOCCOMMENT;
         $mapper = new ObjectMapper();
 
         $testMethod = new ReflectionMethod('Robtimus\\JSON\\Mapper\\ClassWithAnnotations', 'getNotAnnotated');
-        $docComment = $testMethod->getDocComment();
-
-        $methodAnnotations = getAnnotations($mapper, $docComment);
 
         $method = new ReflectionMethod($mapper, 'getReturnType');
         $method->setAccessible(true);
 
         try {
-            $method->invoke($mapper, $testMethod, $methodAnnotations);
+            $method->invoke($mapper, $testMethod, $testMethod->getDocComment());
         } catch (JSONMappingException $e) {
             $this->assertEquals("Missing @return type for method 'getNotAnnotated' of class Robtimus\\JSON\\Mapper\\ClassWithAnnotations", $e->getMessage());
             return;
@@ -847,14 +913,24 @@ DOCCOMMENT;
         $mapper = new ObjectMapper();
 
         $testMethod = new ReflectionMethod('Robtimus\\JSON\\Mapper\\ClassWithAnnotations', 'getProperlyAnnotated');
-        $docComment = $testMethod->getDocComment();
-
-        $methodAnnotations = getAnnotations($mapper, $docComment);
 
         $method = new ReflectionMethod($mapper, 'getReturnType');
         $method->setAccessible(true);
 
-        $type = $method->invoke($mapper, $testMethod, $methodAnnotations);
+        $type = $method->invoke($mapper, $testMethod, $testMethod->getDocComment());
+
+        $this->assertEquals('string', $type);
+    }
+
+    public function testGetReturnTypeWithMinimalAnnotations() {
+        $mapper = new ObjectMapper();
+
+        $testMethod = new ReflectionMethod('Robtimus\\JSON\\Mapper\\ClassWithAnnotations', 'getMinimallyAnnotatedReturn');
+
+        $method = new ReflectionMethod($mapper, 'getReturnType');
+        $method->setAccessible(true);
+
+        $type = $method->invoke($mapper, $testMethod, $testMethod->getDocComment());
 
         $this->assertEquals('string', $type);
     }
@@ -863,15 +939,12 @@ DOCCOMMENT;
         $mapper = new ObjectMapper();
 
         $testMethod = new ReflectionMethod('Robtimus\\JSON\\Mapper\\ClassWithAnnotations', 'getIncorrectlyAnnotated');
-        $docComment = $testMethod->getDocComment();
-
-        $methodAnnotations = getAnnotations($mapper, $docComment);
 
         $method = new ReflectionMethod($mapper, 'getReturnType');
         $method->setAccessible(true);
 
         try {
-            $method->invoke($mapper, $testMethod, $methodAnnotations);
+            $method->invoke($mapper, $testMethod, $testMethod->getDocComment());
         } catch (JSONMappingException $e) {
             $this->assertEquals("Missing @return type for method 'getIncorrectlyAnnotated' of class Robtimus\\JSON\\Mapper\\ClassWithAnnotations", $e->getMessage());
             return;
@@ -885,15 +958,12 @@ DOCCOMMENT;
         $mapper = new ObjectMapper();
 
         $testMethod = new ReflectionMethod('Robtimus\\JSON\\Mapper\\ClassWithAnnotations', 'getNotAnnotated');
-        $docComment = $testMethod->getDocComment();
-
-        $methodAnnotations = getAnnotations($mapper, $docComment);
 
         $method = new ReflectionMethod($mapper, 'getParameterType');
         $method->setAccessible(true);
 
         try {
-            $method->invoke($mapper, $testMethod, $methodAnnotations);
+            $method->invoke($mapper, $testMethod, $testMethod->getDocComment());
         } catch (JSONMappingException $e) {
             $this->assertEquals("Missing @param type for parameter 'x' of method 'getNotAnnotated' of class Robtimus\\JSON\\Mapper\\ClassWithAnnotations", $e->getMessage());
             return;
@@ -905,14 +975,24 @@ DOCCOMMENT;
         $mapper = new ObjectMapper();
 
         $testMethod = new ReflectionMethod('Robtimus\\JSON\\Mapper\\ClassWithAnnotations', 'getProperlyAnnotated');
-        $docComment = $testMethod->getDocComment();
-
-        $methodAnnotations = getAnnotations($mapper, $docComment);
 
         $method = new ReflectionMethod($mapper, 'getParameterType');
         $method->setAccessible(true);
 
-        $type = $method->invoke($mapper, $testMethod, $methodAnnotations);
+        $type = $method->invoke($mapper, $testMethod, $testMethod->getDocComment());
+
+        $this->assertEquals('int', $type);
+    }
+
+    public function testGetParameterTypeWithMinimalAnnotations() {
+        $mapper = new ObjectMapper();
+
+        $testMethod = new ReflectionMethod('Robtimus\\JSON\\Mapper\\ClassWithAnnotations', 'getMinimallyAnnotatedParam');
+
+        $method = new ReflectionMethod($mapper, 'getParameterType');
+        $method->setAccessible(true);
+
+        $type = $method->invoke($mapper, $testMethod, $testMethod->getDocComment());
 
         $this->assertEquals('int', $type);
     }
@@ -921,15 +1001,12 @@ DOCCOMMENT;
         $mapper = new ObjectMapper();
 
         $testMethod = new ReflectionMethod('Robtimus\\JSON\\Mapper\\ClassWithAnnotations', 'getIncorrectlyAnnotated');
-        $docComment = $testMethod->getDocComment();
-
-        $methodAnnotations = getAnnotations($mapper, $docComment);
 
         $method = new ReflectionMethod($mapper, 'getParameterType');
         $method->setAccessible(true);
 
         try {
-            $method->invoke($mapper, $testMethod, $methodAnnotations);
+            $method->invoke($mapper, $testMethod, $testMethod->getDocComment());
         } catch (JSONMappingException $e) {
             $this->assertEquals("Missing @param type for parameter 'x' of method 'getIncorrectlyAnnotated' of class Robtimus\\JSON\\Mapper\\ClassWithAnnotations", $e->getMessage());
             return;
@@ -937,56 +1014,6 @@ DOCCOMMENT;
         $this->fail('Expected a JSONMappingException');
     }
 
-    // parseParameters
-
-    public function testParseParametersParametersPresent() {
-        $mapper = new ObjectMapper();
-
-        $methodAnnotations = array(
-            'param' => array(
-                'int $x some number',
-                'string $s some string',
-                'bool $b'
-            )
-        );
-
-        $method = new ReflectionMethod($mapper, 'parseParameters');
-        $method->setAccessible(true);
-
-        $parsed = $method->invoke($mapper, $methodAnnotations);
-
-        $expected = array(
-            'x' => 'int',
-            's' => 'string',
-            'b' => 'bool'
-        );
-
-        $this->assertEquals($expected, $parsed);
-    }
-
-    public function testParseParametersParametersNotPresent() {
-        $mapper = new ObjectMapper();
-
-        $methodAnnotations = array();
-
-        $method = new ReflectionMethod($mapper, 'parseParameters');
-        $method->setAccessible(true);
-
-        $parsed = $method->invoke($mapper, $methodAnnotations);
-
-        $expected = array();
-
-        $this->assertEquals($expected, $parsed);
-    }
-}
-
-// utility functions
-
-function getAnnotations(ObjectMapper $mapper, $docComment) {
-    $method = new ReflectionMethod($mapper, 'parseAnnotations');
-    $method->setAccessible(true);
-
-    return $method->invoke($mapper, $docComment);
 }
 
 // utility classes
@@ -1038,21 +1065,6 @@ class ClassWithFieldAndMethods {
     }
 }
 
-class ClassWithNoAccessorType {
-}
-
-/**
- * @JSONAccessorType PROPERTY
- */
-class ClassWithValidAccessorType {
-}
-
-/**
- * @JSONAccessorType FIELD
- */
-class ClassWithInvalidAccessorType {
-}
-
 class ClassWithAnnotations {
 
     protected $notAnnotated;
@@ -1061,6 +1073,9 @@ class ClassWithAnnotations {
      * @var string
      */
     protected $properlyAnnotated;
+
+    /** @var string */
+    protected $minimallyAnnotated;
 
     /**
      * @var
@@ -1075,6 +1090,14 @@ class ClassWithAnnotations {
      * @return string
      */
     protected function getProperlyAnnotated($x) {
+    }
+
+    /** @param int $x */
+    protected function getMinimallyAnnotatedParam($x) {
+    }
+
+    /** @return string */
+    protected function getMinimallyAnnotatedReturn($x) {
     }
 
     /**
