@@ -2,14 +2,18 @@
 namespace Robtimus\JSON\Mapper;
 
 use ReflectionClass;
+use Doctrine\Common\Annotations\PhpParser;
 
 /**
  * @internal Helper class for types.
  */
 final class TypeHelper {
 
+    private static $phpParser = null;
+    private static $useStatements = array();
+
     static function normalizeType($type, ReflectionClass $relativeTo = null) {
-        if (is_a($type, '\ReflectionClass')) {
+        if ($type instanceof ReflectionClass) {
             return $type->getName();
         }
         if (!is_string($type)) {
@@ -25,10 +29,40 @@ final class TypeHelper {
         if (self::isScalarType($type)) {
             return $type;
         }
-        if (substr($type, 0, 1) !== '\\') {
-            $namespace = is_null($relativeTo) ? '' : $relativeTo->getNamespaceName();
-            $prefix = $namespace === '' ? '' : ('\\' . $namespace);
-            $type = $prefix . '\\' . $type;
+        if ($type[0] !== '\\') {
+            if (is_null($relativeTo)) {
+                $type = '\\' . $type;
+            } else {
+                if (is_null(self::$phpParser)) {
+                    self::$phpParser = new PhpParser();
+                }
+                if (!array_key_exists($relativeTo->getName(), self::$useStatements)) {
+                    self::$useStatements[$relativeTo->getName()] = self::$phpParser->parseClass($relativeTo);
+                }
+                $key = strtolower($type);
+                if (array_key_exists($key, self::$useStatements[$relativeTo->getName()])) {
+                    $type = self::$useStatements[$relativeTo->getName()][$key];
+                } else {
+                    $index = strpos($type, '\\');
+                    if ($index === false) {
+                        $namespace = $relativeTo->getNamespaceName();
+                        $prefix = $namespace;
+                        $type = $prefix . '\\' . $type;
+                    } else {
+                        $prefix = strtolower(substr($type, 0, $index));
+                        if (array_key_exists($prefix, self::$useStatements[$relativeTo->getName()])) {
+                            $type = self::$useStatements[$relativeTo->getName()][$prefix] . substr($type, $index);
+                        } else {
+                            $namespace = $relativeTo->getNamespaceName();
+                            $prefix = $namespace;
+                            $type = $prefix . '\\' . $type;
+                        }
+                    }
+                }
+                if ($type[0] !== '\\') {
+                    $type = '\\' . $type;
+                }
+            }
         }
         if (class_exists($type)) {
             return $type;

@@ -40,11 +40,13 @@ By default, all public properties, getters (both `get` and `is` prefixes are sup
 
 The following are supported:
 * Scalar types (`boolean`, `bool`, `integer`, `int`, `float`, `double`, `string`).
-* Object types. If not a fully qualified class name, it is resolved against the declaring class. Note: `use` clauses are not inspected and therefore cannot be used to prevent having to use fully qualified class names.
+* Object types.
 * `\stdClass`.
 * Arrays of the above; append `[]` after the type.
 
 ### Including and excluding JSON properties
+
+Note: all of the below annotations are located in namespace `Robtimus\JSON\Mapper\Annotations`, and either need to be included with a `use` statement, or be used with their fully qualified class names.
 
 #### @JSONAccessorType
 A class can be annotated with `@JSONAccessorType("<ACCESSOR_TYPE>")` to change what is automatically included. The following are valid accessor types:
@@ -54,7 +56,7 @@ A class can be annotated with `@JSONAccessorType("<ACCESSOR_TYPE>")` to change w
 * `NONE`: no properties, getters or setters are included unless explicitly included. Use this if you want to explicitly include JSON properties.
 
 #### @JSONProperty
-A single property, getter or setter can be explicitly included by annotating it with `@JSONProperty`, even if it would otherwise be excluded. This annotation can take an optional `name` property to override the default property name: `@JSONProperty(name="name")`.
+A single property, getter or setter can be explicitly included by annotating it with `@JSONProperty`, even if it would otherwise be excluded. This annotation can take an optional `name` property to override the default property name: `@JSONProperty(name = "name")`.
 
 If no explicit JSON property name is given it is determined as follows:
 * For properties, the property name.
@@ -79,8 +81,8 @@ Set the `omitEmptyArrays` property of an `ObjectMapper` instance to `true` to om
 
 ### JSON Property order
 By default, JSON properties will have an undetermined order during serialization. A class can be annotated with `@JSONPropertyOrder` to create a specific order. This annotation can be used in two ways:
-* `@JSONPropertyOrder(alphabetical=true)` to use alphabetical ordering.
-* `@JSONPropertyOrder(properties={"property1", "property2", ...})` to specify the desired order. Note that this list must include all JSON properties, including inherited JSON properties.
+* `@JSONPropertyOrder(alphabetical = true)` to use alphabetical ordering.
+* `@JSONPropertyOrder(properties = {"property1", "property2", ...})` to specify the desired order. Note that this list must include all JSON properties, including inherited JSON properties.
 
 Note that this property order does not include properties returned by methods annotated with `@JSONAnyGetter`.
 
@@ -94,14 +96,14 @@ By default, scalar values are used as-is, and object are processed as described 
 
 #### Custom serialization
 A custom serializer can be created by implementing `JSONSerializer`, and can be defined for a JSON property in two ways:
-* Annotate a property or getter with `@JSONSerialize(using="<JSONSerializer class name>")` to use a custom serializer for a single property or getter.
+* Annotate a property or getter with `@JSONSerialize(using = "<JSONSerializer class name>")` to use a custom serializer for a single property or getter.
 * Call `setDefaultSerializer` on the `ObjectMapper` instance to use a custom serializer for all JSON properties of a specific type. For example, to use a `DateTimeJSONSerializer` with for all `DateTime` JSON properties:
 
     `$mapper->setDefaultSerializer('\DateTime', new DateTimeJSONSerializer(DateTime::RFC3339_EXTENDED));`
 
 #### Custom serialization
 A custom deserializer can be created by implementing `JSONDeserializer`, and can be defined for a JSON property in two ways:
-* Annotate a property or setter with `@JSONDeserialize(using="<JSONDeserializer class name>")` to use a custom deserializer for a single property or setter.
+* Annotate a property or setter with `@JSONDeserialize(using = "<JSONDeserializer class name>")` to use a custom deserializer for a single property or setter.
 * Call `setDefaultDeserializer` on the `ObjectMapper` instance to use a custom deserializer for all JSON properties of a specific type. For example, to use a `DateTimeJSONDeserializer` with for all `DateTime` JSON properties:
 
     `$mapper->setDefaultDeserializer('\DateTime', new DateTimeJSONDeserializer(DateTime::RFC3339_EXTENDED));`
@@ -118,8 +120,8 @@ The following is a mapping of annotations to the methods that replace them:
 * `@JSONAnyGetter`: call `withAnyGetter` on a `ClassDescriptor` instance. This method is additive, so it's possible to specify multiple methods.
 * `@JSONAnySetter`: call `withAnySetter` on a `ClassDescriptor` instance.
 * `@JSONPropertyOrder`: call `orderProperties` on a `ClassDescriptor` instance. Provide an array with the JSON properties to order on, or provide no arguments to use alphatical ordering.
-* `@JSONSerializer`: call `withSerializer` on an added property.
-* `@JSONDeserializer`: call `withDeserializer` on an added property.
+* `@JSONSerialize`: call `withSerializer` on an added property.
+* `@JSONDeserialize`: call `withDeserializer` on an added property.
 
 Note that all getters and setters are callables. This removes the requirement to use instance methods.
 

@@ -23,7 +23,7 @@ class DateTimeJSONSerializer implements JSONSerializer {
     }
 
     public function toJSON($value) {
-        if (!is_object($value) || (!is_a($value, '\DateTime') && !is_a($value, '\DateTimeImmutable'))) {
+        if (!($value instanceof \DateTime) && !(class_exists('\DateTimeImmutable') && $value instanceof \DateTimeImmutable)) {
             $valueType = gettype($value);
             if (is_scalar($value)) {
                 throw new JSONGenerationException("Unsupported value '$value' of type $valueType");
@@ -37,7 +37,7 @@ class DateTimeJSONSerializer implements JSONSerializer {
         if ($result !== FALSE) {
             return $result;
         }
-        $lastErrors = is_a($value, '\DateTime') ? \DateTime::getLastErrors() : \DateTimeImmutable::getLastErrors();
+        $lastErrors = $value instanceof \DateTime ? \DateTime::getLastErrors() : \DateTimeImmutable::getLastErrors();
         $message = "Could not parse '$value' into a DateTime object";
         if (array_key_exists('errors', $lastErrors)) {
             $message = implode(', ', $lastErrors['errors']);
