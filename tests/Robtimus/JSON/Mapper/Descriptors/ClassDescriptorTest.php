@@ -1,10 +1,7 @@
 <?php
 namespace Robtimus\JSON\Mapper\Descriptors;
 
-use stdClass;
 use ReflectionClass;
-use ReflectionMethod;
-use ReflectionProperty;
 use PHPUnit\Framework\TestCase;
 use Robtimus\JSON\Mapper\JSONMappingException;
 use Robtimus\JSON\Mapper\Serializers\DateTimeJSONSerializer;

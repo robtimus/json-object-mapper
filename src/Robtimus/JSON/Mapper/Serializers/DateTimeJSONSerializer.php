@@ -1,7 +1,6 @@
 <?php
 namespace Robtimus\JSON\Mapper\Serializers;
 
-use Exception;
 use Robtimus\JSON\Mapper\JSONGenerationException;
 use Robtimus\JSON\Mapper\JSONSerializer;
 

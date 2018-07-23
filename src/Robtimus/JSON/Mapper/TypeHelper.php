@@ -1,6 +1,7 @@
 <?php
 namespace Robtimus\JSON\Mapper;
 
+use InvalidArgumentException;
 use ReflectionClass;
 use Doctrine\Common\Annotations\PhpParser;
 

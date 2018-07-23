@@ -11,17 +11,7 @@ use Doctrine\Common\Annotations\AnnotationRegistry;
 use Doctrine\Common\Annotations\CachedReader;
 use Doctrine\Common\Cache\ArrayCache;
 use Robtimus\JSON\Mapper\Annotations\JSONAccessorType;
-use Robtimus\JSON\Mapper\Annotations\JSONAnyGetter;
-use Robtimus\JSON\Mapper\Annotations\JSONAnySetter;
-use Robtimus\JSON\Mapper\Annotations\JSONDeserialize;
-use Robtimus\JSON\Mapper\Annotations\JSONIgnore;
-use Robtimus\JSON\Mapper\Annotations\JSONProperty;
-use Robtimus\JSON\Mapper\Annotations\JSONPropertyOrder;
-use Robtimus\JSON\Mapper\Annotations\JSONReadOnly;
-use Robtimus\JSON\Mapper\Annotations\JSONSerialize;
-use Robtimus\JSON\Mapper\Annotations\JSONWriteOnly;
 use Robtimus\JSON\Mapper\Descriptors\ClassDescriptor;
-use Robtimus\JSON\Mapper\Descriptors\PropertyDescriptor;
 
 /**
  * ObjectMapper provides functionality for converting objects to and from JSON.
@@ -478,7 +468,6 @@ class ObjectMapper {
         foreach ($class->getProperties() as $property) {
             if ($property->getDeclaringClass()->getName() === $classDescriptor->className()) {
                 if ($this->includeProperty($property, $accessorType)) {
-                    $jsonProperty = $this->annotationReader->getPropertyAnnotation($property, 'Robtimus\JSON\Mapper\Annotations\JSONProperty');
                     $name = $this->getJSONPropertyName($property, $property->getName());
                     $type = $this->getPropertyType($property, $property->getDocComment());
                     // overwrite what was already specified
@@ -554,7 +543,7 @@ class ObjectMapper {
                 $name = $this->extractPropertyNameFromMethod($methodName, 3);
                 $name = $this->getJSONPropertyName($method, $name);
                 $type = $this->getParameterType($method, $method->getDocComment());
-                $this->updateProperty($classDescriptor, $method, $name, $type, null, $setter);
+                $this->updateProperty($classDescriptor, $method, $name, $type, null, $method);
             }
         }
     }

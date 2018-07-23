@@ -1,10 +1,7 @@
 <?php
 namespace Robtimus\JSON\Mapper;
 
-use stdClass;
 use ReflectionClass;
-use ReflectionMethod;
-use ReflectionProperty;
 use PHPUnit\Framework\TestCase;
 use PHPUnit\Framework as F;
 
