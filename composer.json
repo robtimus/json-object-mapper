@@ -2,7 +2,7 @@
     "name": "robtimus/json-object-mapper",
     "type": "library",
     "description": "A library to map objects to and from JSON",
-    "homepage": "https://robtimus.github.io/json-object-mapper",
+    "homepage": "https://github.com/robtimus/json-object-mapper",
     "keywords": ["JSON"],
     "license": "Apache-2.0",
     "authors": [
